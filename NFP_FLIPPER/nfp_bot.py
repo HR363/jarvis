@@ -4,10 +4,7 @@ from datetime import datetime, timedelta
 import pytz
 
 # --- STRATEGY SETTINGS ---
-SYMBOL = "XAUUSD"       # Gold is common for NFP, but change to your pair (e.g., EURUSD)
-# NEWS_TIME_STR = "2024-03-08 15:30:00" # DISABLED for Manual Mode
-# SECONDS_BEFORE = 7      # DISABLED for Manual Mode
-
+SYMBOL = "XAUUSD"       
 # Stop Loss and Take Profit Settings (in Pips)
 STOP_LOSS_PIPS = 10     
 TAKE_PROFIT_PIPS = 100   
@@ -16,8 +13,6 @@ BREAKEVEN_PADDING = 2       # Small profit to lock in (pips)
 
 
 # --- LAYERING STRATEGY ---
-# Format: { "distance": pips_away, "lot": lot_size }
-# Based on your request: 20 pips (small), 30 pips (larger), 40 pips (largest)
 ORDERS_CONFIG = [
     { "distance": 20, "lot": 0.05 },  # Layer 1: Smallest risk close to price
     { "distance": 30, "lot": 0.5 },  # Layer 2: Medium risk
