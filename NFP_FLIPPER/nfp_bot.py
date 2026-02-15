@@ -4,19 +4,27 @@ from datetime import datetime, timedelta
 import pytz
 
 # --- STRATEGY SETTINGS ---
-SYMBOL = "XAUUSD"       
+SYMBOL = "XAUUSD.m"         # Your broker's gold symbol
+# NEWS_TIME_STR = "2024-03-08 15:30:00" # DISABLED for Manual Mode
+# SECONDS_BEFORE = 7      # DISABLED for Manual Mode
+
 # Stop Loss and Take Profit Settings (in Pips)
 STOP_LOSS_PIPS = 10     
 TAKE_PROFIT_PIPS = 100   
 BREAKEVEN_TRIGGER_PIPS = 15 # Move SL to BE when price moves this many pips in profit
 BREAKEVEN_PADDING = 2       # Small profit to lock in (pips)
 
+# --- PROFIT EXIT ---
+PROFIT_TARGET_USD = 800  # Close ALL positions when total profit hits this amount
+
 
 # --- LAYERING STRATEGY ---
+# Format: { "distance": pips_away, "lot": lot_size }
+# TESTING MODE: All orders at 80 pips, 0.01 lot each
 ORDERS_CONFIG = [
-    { "distance": 20, "lot": 0.05 },  # Layer 1: Smallest risk close to price
-    { "distance": 30, "lot": 0.5 },  # Layer 2: Medium risk
-    { "distance": 40, "lot": 2 }   # Layer 3: High reward if trend flies
+    { "distance": 20, "lot": 0.05 },  # Layer 1: Testing
+    { "distance": 30, "lot": 0.05 },  # Layer 2: Testing
+    { "distance": 40, "lot": 0.1 }   # Layer 3: Testing
 ]
 
 DELETE_PENDING_AFTER = 120 # Delete pending orders 2 minutes after news if not triggered
@@ -36,6 +44,7 @@ def get_current_price(symbol):
     return tick.bid, tick.ask
 
 def send_order(symbol, order_type, price, sl, tp, lot_size, comment="NFP Bot"):
+    # GTC - Good Till Cancelled (broker default ~15 days)
     request = {
         "action": mt5.TRADE_ACTION_PENDING,
         "symbol": symbol,
@@ -44,19 +53,99 @@ def send_order(symbol, order_type, price, sl, tp, lot_size, comment="NFP Bot"):
         "price": price,
         "sl": sl,
         "tp": tp,
-        "type_time": mt5.ORDER_TIME_SPECIFIED,
-        "expiration": int(time.time() + DELETE_PENDING_AFTER),
+        "type_time": mt5.ORDER_TIME_GTC,
         "comment": comment,
-        "type_filling": mt5.ORDER_FILLING_RETURN, # Try ORDER_FILLING_IOC or ORDER_FILLING_FOK if this fails
+        "type_filling": mt5.ORDER_FILLING_RETURN,
     }
     
     result = mt5.order_send(request)
+    if result is None:
+        print(f"Order send failed - no result returned. Error: {mt5.last_error()}")
+        return None
     if result.retcode != mt5.TRADE_RETCODE_DONE:
         print(f"Order failed: {result.retcode} ({result.comment})")
         return None
     
-    print(f"Placed {lot_size} lot {'BUY' if order_type == mt5.ORDER_TYPE_BUY_STOP else 'SELL'} STOP @ {price:.5f}")
-    return result.order
+    order_ticket = result.order
+    order_name = 'BUY' if order_type == mt5.ORDER_TYPE_BUY_STOP else 'SELL'
+    print(f"Placed {lot_size} lot {order_name} STOP @ {price:.5f} (ticket: {order_ticket})")
+    
+    # Verify order exists with correct expiration
+    order_info = mt5.orders_get(ticket=order_ticket)
+    if order_info is None or len(order_info) == 0:
+        print(f"  WARNING: Order {order_ticket} not found after placement!")
+    else:
+        exp_time = datetime.fromtimestamp(order_info[0].time_expiration) if order_info[0].time_expiration > 0 else "GTC"
+        print(f"  Verified: ticket {order_ticket}, expiration: {exp_time}")
+    
+    return order_ticket
+
+def close_all_positions():
+    """Close all open positions for SYMBOL"""
+    positions = mt5.positions_get(symbol=SYMBOL)
+    if positions is None or len(positions) == 0:
+        return 0
+    
+    closed = 0
+    for pos in positions:
+        # Determine close type
+        close_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
+        tick = mt5.symbol_info_tick(SYMBOL)
+        close_price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
+        
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": SYMBOL,
+            "volume": pos.volume,
+            "type": close_type,
+            "position": pos.ticket,
+            "price": close_price,
+            "type_filling": mt5.ORDER_FILLING_RETURN,
+            "comment": "Profit Target Exit"
+        }
+        result = mt5.order_send(request)
+        if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+            closed += 1
+            print(f"CLOSED position {pos.ticket} @ {close_price:.5f}")
+    
+    return closed
+
+def delete_pending_orders():
+    """Delete all pending orders for SYMBOL"""
+    orders = mt5.orders_get(symbol=SYMBOL)
+    if orders is None or len(orders) == 0:
+        return 0
+    
+    deleted = 0
+    for order in orders:
+        request = {
+            "action": mt5.TRADE_ACTION_REMOVE,
+            "order": order.ticket
+        }
+        result = mt5.order_send(request)
+        if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+            deleted += 1
+            print(f"DELETED pending order {order.ticket}")
+    
+    return deleted
+
+def check_profit_exit(starting_equity):
+    """Check if total profit has hit target - returns True if exited"""
+    account_info = mt5.account_info()
+    if account_info is None:
+        return False
+    
+    current_equity = account_info.equity
+    profit = current_equity - starting_equity
+    
+    if profit >= PROFIT_TARGET_USD:
+        print(f"\n*** PROFIT TARGET HIT! ${profit:.2f} >= ${PROFIT_TARGET_USD} ***")
+        closed = close_all_positions()
+        deleted = delete_pending_orders()
+        print(f"Closed {closed} positions, deleted {deleted} pending orders")
+        return True
+    
+    return False
 
 def check_breakeven():
     positions = mt5.positions_get(symbol=SYMBOL)
@@ -170,11 +259,21 @@ def main():
         
         send_order(SYMBOL, mt5.ORDER_TYPE_SELL_STOP, sell_price, sell_sl, sell_tp, lot, f"NFP_L{i+1}_Sell")
 
-    print("\n--- ORDERS PLACED. MONITORING FOR BREAKEVEN ---")
+    # Record starting equity for profit tracking
+    account_info = mt5.account_info()
+    starting_equity = account_info.equity
+    print(f"\n--- ORDERS PLACED. MONITORING FOR PROFIT EXIT ---")
+    print(f"Starting Equity: ${starting_equity:.2f}")
+    print(f"Profit Target: ${PROFIT_TARGET_USD} (will close all at ${starting_equity + PROFIT_TARGET_USD:.2f})")
     print("Press Ctrl+C to stop the bot.")
     
     try:
         while True:
+            # Check profit exit first (fastest exit)
+            if check_profit_exit(starting_equity):
+                print("\n*** PROFIT TARGET REACHED - BOT FINISHED ***")
+                break
+            
             check_breakeven()
             time.sleep(0.1)
     except KeyboardInterrupt:
