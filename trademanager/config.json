@@ -19,5 +19,12 @@
     "daily_profit_target": 0,
     
     "magic_number": 0,
-    "check_interval_seconds": 1.0
+    "check_interval_seconds": 1.0,
+    
+    "email_enabled": false,
+    "email_smtp_server": "smtp.gmail.com",
+    "email_smtp_port": 587,
+    "email_sender": "",
+    "email_password": "",
+    "email_recipient": ""
 }

@@ -23,6 +23,9 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict
 import logging
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # Setup logging
 logging.basicConfig(
@@ -62,6 +65,14 @@ class TradeConfig:
     # General
     magic_number: int = 0                    # Filter by magic (0 = all)
     check_interval_seconds: float = 1.0      # How often to check positions
+    
+    # Email Notifications
+    email_enabled: bool = False
+    email_smtp_server: str = "smtp.gmail.com"
+    email_smtp_port: int = 587
+    email_sender: str = ""                   # Your email address
+    email_password: str = ""                 # App password (not regular password)
+    email_recipient: str = ""                # Where to send alerts (can be same as sender)
     
     def __post_init__(self):
         if self.symbols is None:
@@ -112,6 +123,34 @@ class TradeManager:
         mt5.shutdown()
         self.connected = False
         logger.info("Disconnected from MT5")
+    
+    def send_email(self, subject: str, body: str):
+        """Send email notification"""
+        if not self.config.email_enabled:
+            return
+        
+        if not all([self.config.email_sender, self.config.email_password, self.config.email_recipient]):
+            logger.warning("Email not configured properly - skipping notification")
+            return
+        
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = self.config.email_sender
+            msg['To'] = self.config.email_recipient
+            msg['Subject'] = f"🔔 Trade Manager: {subject}"
+            
+            # Add timestamp to body
+            full_body = f"{body}\n\n---\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            msg.attach(MIMEText(full_body, 'plain'))
+            
+            with smtplib.SMTP(self.config.email_smtp_server, self.config.email_smtp_port) as server:
+                server.starttls()
+                server.login(self.config.email_sender, self.config.email_password)
+                server.send_message(msg)
+            
+            logger.info(f"Email sent: {subject}")
+        except Exception as e:
+            logger.error(f"Failed to send email: {e}")
     
     def get_pip_value(self, symbol: str) -> float:
         """Get pip value for a symbol (handles JPY pairs, gold, etc.)"""
@@ -335,6 +374,19 @@ class TradeManager:
             if self.modify_sl(position, new_sl):
                 self.breakeven_done.add(position.ticket)
                 self.log_trade_action(position, "BREAKEVEN", f"SL moved to BE at 1:{self.config.breakeven_rr} RR")
+                
+                # Send email notification
+                pos_type = "BUY" if position.type == mt5.ORDER_TYPE_BUY else "SELL"
+                self.send_email(
+                    f"Breakeven Hit - {position.symbol}",
+                    f"Position secured at breakeven!\n\n"
+                    f"Symbol: {position.symbol}\n"
+                    f"Type: {pos_type}\n"
+                    f"Ticket: {position.ticket}\n"
+                    f"Entry: {position.price_open:.5f}\n"
+                    f"New SL: {new_sl:.5f}\n"
+                    f"Current Profit: ${position.profit:.2f}"
+                )
                 return True
         
         return False
@@ -362,6 +414,22 @@ class TradeManager:
                 if self.partial_close(position, close_percent):
                     self.partial_closes_done[ticket].append(target_rr)
                     logger.info(f"Partial close at 1:{target_rr} RR for ticket {ticket}")
+                    
+                    # Send email notification
+                    pos_type = "BUY" if position.type == mt5.ORDER_TYPE_BUY else "SELL"
+                    partials_done = len(self.partial_closes_done[ticket])
+                    remaining = 100 - (partials_done * 30)  # 30% each partial
+                    self.send_email(
+                        f"Partial Close #{partials_done} - {position.symbol}",
+                        f"Partial profit taken at 1:{target_rr} RR!\n\n"
+                        f"Symbol: {position.symbol}\n"
+                        f"Type: {pos_type}\n"
+                        f"Ticket: {ticket}\n"
+                        f"Closed: {close_percent}%\n"
+                        f"Remaining: {remaining}%\n"
+                        f"Current RR: {current_rr:.2f}\n"
+                        f"Profit: ${position.profit:.2f}"
+                    )
                     return True
         
         return False
@@ -527,7 +595,23 @@ class TradeManager:
             print(f"    - {target['close_percent']}% at 1:{target['rr']} RR")
         print(f"  Runner: 10% left for manual close")
         print(f"  Max Daily Loss: {self.config.max_daily_loss_percent}%")
+        print(f"  Email Notifications: {'Enabled' if self.config.email_enabled else 'Disabled'}")
         print()
+        
+        # Send startup notification
+        account = mt5.account_info()
+        if account:
+            self.send_email(
+                "Trade Manager Started",
+                f"Trade Manager is now running and monitoring your positions.\\n\\n"
+                f"Account: {account.login}\\n"
+                f"Balance: ${account.balance:.2f}\\n"
+                f"Equity: ${account.equity:.2f}\\n\\n"
+                f"Settings:\\n"
+                f"- Breakeven at 1:{self.config.breakeven_rr} RR\\n"
+                f"- Partials: 30% at 1:3, 30% at 1:6, 30% at 1:10\\n"
+                f"- Runner: 10% for manual close"
+            )
         
         try:
             while self.running:
