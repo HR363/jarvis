@@ -1,0 +1,23 @@
+{
+    "symbols": [],
+    
+    "breakeven_enabled": true,
+    "breakeven_rr": 1.0,
+    "breakeven_padding_pips": 1.0,
+    
+    "partial_close_enabled": true,
+    "partial_close_targets": [
+        {"rr": 3, "close_percent": 30},
+        {"rr": 6, "close_percent": 30},
+        {"rr": 10, "close_percent": 30}
+    ],
+    
+    "risk_percent": 1.0,
+    "max_daily_loss_percent": 5.0,
+    "max_positions": 10,
+    
+    "daily_profit_target": 0,
+    
+    "magic_number": 0,
+    "check_interval_seconds": 1.0
+}
