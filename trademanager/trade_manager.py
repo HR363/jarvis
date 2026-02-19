@@ -1,12 +1,4 @@
 """
-Trade Manager - Risk/Reward Based Position Management for MetaTrader5
-Features:
-- Breakeven at 1:1 RR
-- Partial closes at RR targets (1:3, 1:6, 1:10)
-- Risk-based lot calculation
-- Trade logging/journaling
-- Multi-symbol support
-
 Strategy:
 - Move SL to breakeven at 1:1 RR
 - Close 30% at 1:3 RR
@@ -70,16 +62,16 @@ class TradeConfig:
     email_enabled: bool = False
     email_smtp_server: str = "smtp.gmail.com"
     email_smtp_port: int = 587
-    email_sender: str = ""                   # Your email address
-    email_password: str = ""                 # App password (not regular password)
-    email_recipient: str = ""                # Where to send alerts (can be same as sender)
+    email_sender: str = ""                   
+    email_password: str = ""                 
+    email_recipient: str = ""                
     
     def __post_init__(self):
         if self.symbols is None:
             self.symbols = []
         if self.partial_close_targets is None:
-            # Default: 30% at 1:3, 30% at 1:6, 30% at 1:10
-            # Remaining 10% is the runner (manual close)
+           
+            
             self.partial_close_targets = [
                 {"rr": 3, "close_percent": 30},
                 {"rr": 6, "close_percent": 30},
@@ -96,7 +88,6 @@ class TradeManager:
         self.breakeven_done = set()    # tickets that hit breakeven
         self.daily_start_balance = 0
         self.trade_journal = []
-        # Track initial risk (SL distance) for each position
         self.position_risk = {}  # {ticket: initial_sl_distance_in_price}
         
     def connect(self) -> bool:
@@ -156,15 +147,13 @@ class TradeManager:
         """Get pip value for a symbol (handles JPY pairs, gold, etc.)"""
         info = mt5.symbol_info(symbol)
         if info is None:
-            return 0.0001  # Default
-        
-        # For gold (XAUUSD) pip is typically 0.01
+            return 0.0001  
         if "XAU" in symbol.upper() or "GOLD" in symbol.upper():
             return 0.01
-        # For JPY pairs, pip is 0.01
+        
         elif "JPY" in symbol.upper():
             return 0.01
-        # For most forex pairs
+        
         else:
             return 0.0001
     
@@ -482,9 +471,7 @@ class TradeManager:
         
         pip_value = self.get_pip_value(symbol)
         
-        # Calculate contract value per pip
-        # For forex: pip_value * contract_size / price
-        # Simplified calculation
+        
         if symbol_info.trade_contract_size > 0:
             point_value = symbol_info.trade_tick_value
             pip_per_point = pip_value / symbol_info.point
@@ -657,27 +644,9 @@ def load_config_from_file(filepath: str = "config.json") -> TradeConfig:
     return TradeConfig()
 
 
-# ============================================================================
-# MAIN ENTRY POINT
-# ============================================================================
 
 if __name__ == "__main__":
     # Load config from file or use defaults
     config = load_config_from_file("config.json")
-    
-    # Or configure programmatically:
-    # config = TradeConfig(
-    #     symbols=["XAUUSD.m", "EURUSD"],
-    #     breakeven_rr=1.0,           # Move SL to BE at 1:1 RR
-    #     breakeven_padding_pips=1.0,
-    #     partial_close_targets=[
-    #         {"rr": 3, "close_percent": 30},   # 30% at 1:3 RR
-    #         {"rr": 6, "close_percent": 30},   # 30% at 1:6 RR
-    #         {"rr": 10, "close_percent": 30}   # 30% at 1:10 RR
-    #     ],                                     # Remaining 10% = runner
-    #     risk_percent=1.0,
-    #     max_daily_loss_percent=3.0
-    # )
-    
     manager = TradeManager(config)
     manager.run(show_status_interval=30)

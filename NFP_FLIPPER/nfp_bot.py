@@ -4,27 +4,23 @@ from datetime import datetime, timedelta
 import pytz
 
 # --- STRATEGY SETTINGS ---
-SYMBOL = "XAUUSD.m"         # Your broker's gold symbol
-# NEWS_TIME_STR = "2024-03-08 15:30:00" # DISABLED for Manual Mode
-# SECONDS_BEFORE = 7      # DISABLED for Manual Mode
+SYMBOL = "XAUUSD.m"    
 
 # Stop Loss and Take Profit Settings (in Pips)
 STOP_LOSS_PIPS = 10     
 TAKE_PROFIT_PIPS = 100   
-BREAKEVEN_TRIGGER_PIPS = 15 # Move SL to BE when price moves this many pips in profit
-BREAKEVEN_PADDING = 2       # Small profit to lock in (pips)
+BREAKEVEN_TRIGGER_PIPS = 15 
+BREAKEVEN_PADDING = 2       
 
-# --- PROFIT EXIT ---
+# PROFIT EXIT 
 PROFIT_TARGET_USD = 800  # Close ALL positions when total profit hits this amount
 
 
-# --- LAYERING STRATEGY ---
-# Format: { "distance": pips_away, "lot": lot_size }
-# TESTING MODE: All orders at 80 pips, 0.01 lot each
+# LAYERING STRATEGY 
 ORDERS_CONFIG = [
-    { "distance": 20, "lot": 0.05 },  # Layer 1: Testing
-    { "distance": 30, "lot": 0.05 },  # Layer 2: Testing
-    { "distance": 40, "lot": 0.1 }   # Layer 3: Testing
+    { "distance": 20, "lot": 0.05 }, 
+    { "distance": 30, "lot": 0.05 },  
+    { "distance": 40, "lot": 0.1 }   
 ]
 
 DELETE_PENDING_AFTER = 120 # Delete pending orders 2 minutes after news if not triggered
